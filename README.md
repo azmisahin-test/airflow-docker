@@ -8,15 +8,11 @@ Bu repo, Apache Airflow'u Docker Compose kullanarak kurmak için gereken dosyala
 - Docker Compose
 
 ##
-Veritabanını Başlatın: Veritabanını başlattığınızdan emin olun. Aşağıdaki komutları tekrar çalıştırın:
 
+Veritabanını Başlatın: Veritabanını başlattığınızdan emin olun. Aşağıdaki komutları tekrar çalıştırın:
 
 ```
 docker-compose run airflow-postgres
-```
-
-```
-docker-compose run airflow-scheduler airflow db init
 ```
 
 ```
