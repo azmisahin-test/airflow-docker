@@ -13,7 +13,11 @@ services:
     ports:
       - "8080:8080"
     volumes:
-      - ./dags:/usr/local/airflow/dags
+      - ${AIRFLOW_PROJ_DIR:-.}/dags:/usr/local/airflow/dags
+      - ${AIRFLOW_PROJ_DIR:-.}/logs:/usr/local/airflow/logs
+      - ${AIRFLOW_PROJ_DIR:-.}/config:/usr/local/airflow/config
+      - ${AIRFLOW_PROJ_DIR:-.}/plugins:/usr/local/airflow/plugins
+
     command: webserver
 
   airflow-scheduler:
@@ -25,7 +29,10 @@ services:
       - AIRFLOW__CORE__EXECUTOR=LocalExecutor
       - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://airflow:airflow@airflow-postgres:5432/airflow
     volumes:
-      - ./dags:/usr/local/airflow/dags
+      - ${AIRFLOW_PROJ_DIR:-.}/dags:/usr/local/airflow/dags
+      - ${AIRFLOW_PROJ_DIR:-.}/logs:/usr/local/airflow/logs
+      - ${AIRFLOW_PROJ_DIR:-.}/config:/usr/local/airflow/config
+      - ${AIRFLOW_PROJ_DIR:-.}/plugins:/usr/local/airflow/plugins
     command: scheduler
 
   airflow-postgres:
