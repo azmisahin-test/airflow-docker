@@ -26,13 +26,8 @@ docker-compose run airflow-webserver airflow db init
 Kullanıcı Oluşturun: Kullanıcı oluşturma adımını gerçekleştirin. Örnek olarak aşağıdaki komutu çalıştırın ve parolanızı girin:
 
 ```
-docker-compose run airflow-webserver airflow users create \
-    --username admin \
-    --firstname Admin \
-    --lastname User \
-    --role Admin \
-    --email admin@example.com \
-    --password your_password_here
+docker-compose run airflow-webserver airflow users create --username admin --firstname Admin --lastname User --role Admin --email admin@example.com --password your_password_here
+
 ```
 
 Parola kısmını istediğiniz gibi belirleyin.
