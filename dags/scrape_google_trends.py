@@ -18,7 +18,7 @@ dag = DAG(
     "google_trends_scraping",
     default_args=default_args,
     description="Google Trends verilerini çekme",
-    schedule_interval=None,  # Otomatik zamanlama yok
+    schedule_interval="*/2 * * * *",  # Her 2 dakikada bir çalışacak
     max_active_runs=1,  # Aynı anda yalnızca 1 çalıştırma
     concurrency=1,  # Aynı anda yalnızca 1 görev çalışabilir
 )
