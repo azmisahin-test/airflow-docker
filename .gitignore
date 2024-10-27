@@ -1,0 +1,36 @@
+# Python cache dosyaları
+__pycache__/
+*.py[cod]
+
+# Jupyter Notebook checkpoint dosyaları
+.ipynb_checkpoints/
+
+# Log dosyaları
+*.log
+
+# Airflow konfigürasyon dosyaları
+airflow.cfg
+*.json
+
+# Sanal ortam dosyaları
+venv/
+env/
+
+# Gereksinim dosyaları
+*.whl
+*.egg-info/
+
+# Çıktı dosyaları
+*.csv
+*.txt
+*.out
+
+# IDE veya editör ayar dosyaları
+.idea/
+.vscode/
+*.sublime-workspace
+*.sublime-project
+
+# Gereksiz dosyalar
+.DS_Store
+Thumbs.db
