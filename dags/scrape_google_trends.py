@@ -1,16 +1,16 @@
 from airflow import DAG
 from airflow.operators.python import PythonOperator
-from datetime import datetime, timedelta
+from datetime import datetime
 import requests
 from bs4 import BeautifulSoup
 import os
+import pytz
 
 # İş akışının başlangıç tarihi
 default_args = {
     "owner": "airflow",
-    "start_date": datetime.now()
-    + timedelta(minutes=1),  # 1 dakika sonra başlaması için ayarlandı
-    "retries": 1,
+    "start_date": datetime.now(pytz.UTC),  # Şu anki zaman
+    "retries": 0,  # Yeniden deneme sayısını sıfırladık
 }
 
 # DAG tanımı
@@ -18,7 +18,9 @@ dag = DAG(
     "google_trends_scraping",
     default_args=default_args,
     description="Google Trends verilerini çekme",
-    schedule_interval="*/10 * * * *",  # Her 10 dakikada bir çalışacak şekilde ayarlandı
+    schedule_interval=None,  # Otomatik zamanlama yok
+    max_active_runs=1,  # Aynı anda yalnızca 1 çalıştırma
+    concurrency=1,  # Aynı anda yalnızca 1 görev çalışabilir
 )
 
 
@@ -38,7 +40,7 @@ def scrape_google_trends():
         trend_titles = [trend.get_text() for trend in trends]
 
         # İşlenmiş veriyi kaydetme
-        dags_folder = "/opt/airflow/dags/"
+        dags_folder = "/opt/airflow/logs/"
         file_path = os.path.join(dags_folder, "google_trends.txt")
         with open(file_path, "w") as f:
             for title in trend_titles:
