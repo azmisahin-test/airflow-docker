@@ -2,44 +2,43 @@ from airflow import DAG
 from airflow.operators.python import PythonOperator
 from datetime import datetime
 import requests
-from bs4 import BeautifulSoup
+from xml.etree import ElementTree as ET
 import os
 import pytz
 
-# İş akışının başlangıç tarihi
+# Default arguments for the DAG
 default_args = {
     "owner": "airflow",
-    "start_date": datetime.now(pytz.UTC),  # Şu anki zaman
-    "retries": 0,  # Yeniden deneme sayısını sıfırladık
+    "start_date": datetime.now(pytz.UTC),  # Current time
+    "retries": 0,  # No retries
 }
 
-# DAG tanımı
+# DAG definition
 dag = DAG(
     "google_trends_scraping",
     default_args=default_args,
-    description="Google Trends verilerini çekme",
-    schedule_interval="*/2 * * * *",  # Her 2 dakikada bir çalışacak
-    max_active_runs=1,  # Aynı anda yalnızca 1 çalıştırma
-    concurrency=1,  # Aynı anda yalnızca 1 görev çalışabilir
+    description="Scraping Google Trends data",
+    schedule_interval="*/2 * * * *",  # Runs every 2 minutes
+    max_active_runs=1,  # Only one active run at a time
+    concurrency=1,  # Only one task can run at a time
 )
 
-
-# Veri çekme fonksiyonu
+# Data scraping function
 def scrape_google_trends():
-    url = "https://trends.google.com/trending?geo=TR&sort=recency"
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3"
-    }
-    response = requests.get(url, headers=headers)
+    url = "https://trends.google.com/trending/rss?geo=TR&sort=recency"
+    response = requests.get(url)
 
     if response.status_code == 200:
-        soup = BeautifulSoup(response.content, "html.parser")
+        # Parse the XML content
+        root = ET.fromstring(response.content)
 
-        # Trend başlıklarını çekme
-        trends = soup.find_all("span", class_="h3")
-        trend_titles = [trend.get_text() for trend in trends]
+        # Extract trend titles
+        trend_titles = []
+        for item in root.findall(".//item"):
+            title = item.find("title").text
+            trend_titles.append(title)
 
-        # İşlenmiş veriyi kaydetme
+        # Save processed data
         dags_folder = "/opt/airflow/logs/"
         file_path = os.path.join(dags_folder, "google_trends.txt")
         with open(file_path, "w") as f:
@@ -49,13 +48,12 @@ def scrape_google_trends():
     else:
         print(f"Error fetching data: {response.status_code}")
 
-
-# Görev tanımı
+# Task definition
 scrape_task = PythonOperator(
     task_id="scrape_google_trends",
     python_callable=scrape_google_trends,
     dag=dag,
 )
 
-# Görev sırası
+# Task order
 scrape_task
