@@ -137,19 +137,21 @@ def fetch_and_notify_trends(**kwargs):
     countries = ["TR", "US", "GB"]
     for country_code in countries:
         query = f"""
-            SELECT 
-                data_content->'data_content'->>'query' AS trend_title,
-                SUM((data_content->'data_content'->>'popularity_index')::int) AS total_popularity_index,
-                COUNT(*) AS trend_count,
-                country_code
-            FROM 
-                trends
-            WHERE 
-                DATE(created_at) = CURRENT_DATE AND country_code = '{country_code}'
-            GROUP BY 
-                trend_title, country_code
-            ORDER BY 
-                total_popularity_index DESC
+        SELECT 
+            data_content->>'query' AS trend_title,
+            COALESCE((data_content->>'popularity_index')::int, 0) AS popularity_index,
+            country_code,
+            COUNT(*) AS trend_count
+        FROM 
+            trends
+        WHERE 
+            DATE(created_at) = CURRENT_DATE 
+            AND country_code = '{country_code}'
+        GROUP BY 
+            data_content->>'query', data_content->>'popularity_index', country_code
+        ORDER BY 
+            popularity_index DESC, 
+            trend_count DESC
             LIMIT 10
         """
         trends = fetch_trends(query)
@@ -166,18 +168,20 @@ def fetch_and_notify_trends(**kwargs):
 
     # Global sorgu ile job_id ve task_id ekleme
     global_query = f"""
-        SELECT 
-            data_content->'data_content'->>'query' AS trend_title,
-            SUM((data_content->'data_content'->>'popularity_index')::int) AS total_popularity_index,
-            COUNT(*) AS trend_count
-        FROM 
-            trends
-        WHERE 
-            DATE(created_at) = CURRENT_DATE
-        GROUP BY 
-            trend_title
-        ORDER BY 
-            total_popularity_index DESC
+    SELECT
+        data_content->>'query' AS trend_title,
+        COALESCE((data_content->>'popularity_index')::int, 0) AS popularity_index,
+        country_code,
+        COUNT(*) AS trend_count
+    FROM 
+        trends
+    WHERE 
+        DATE(created_at) = CURRENT_DATE 
+    GROUP BY 
+        data_content->>'query', data_content->>'popularity_index', country_code
+    ORDER BY 
+        popularity_index DESC, 
+        trend_count DESC
         LIMIT 10
     """
     global_trends = fetch_trends(global_query)
