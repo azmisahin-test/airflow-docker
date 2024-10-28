@@ -27,62 +27,67 @@ dag = DAG(
 )
 
 
-def send_telegram_notification(trend_data):
+def send_telegram_notification(country, trend_data):
     bot_token = os.getenv("BOT_TOKEN")  # .env dosyasından bot token al
     chat_id = os.getenv("CHAT_ID")  # .env dosyasından chat ID al
-    message = "Today's Trends:\n" + "\n".join(trend_data)
+    message = f"Today's Trends in {country}:\n" + "\n".join(trend_data)
 
     url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
     requests.post(url, json={"chat_id": chat_id, "text": message, "parse_mode": "HTML"})
 
 
 def fetch_and_notify_trends():
-    try:
-        # PostgreSQL veritabanı bağlantısı
-        conn = psycopg2.connect(
-            host=os.getenv("DB_HOST"),
-            database=os.getenv("DB_NAME"),
-            user=os.getenv("DB_USER"),
-            password=os.getenv("DB_PASSWORD"),
-            port=os.getenv("DB_PORT"),
-        )
-        cursor = conn.cursor()
+    countries = ["TR", "US", "GB"]  # İzlemek istediğiniz ülkelerin kodları
+    for country_code in countries:
+        try:
+            # PostgreSQL veritabanı bağlantısı
+            conn = psycopg2.connect(
+                host=os.getenv("DB_HOST"),
+                database=os.getenv("DB_NAME"),
+                user=os.getenv("DB_USER"),
+                password=os.getenv("DB_PASSWORD"),
+                port=os.getenv("DB_PORT"),
+            )
+            cursor = conn.cursor()
 
-        # Sorguyu çalıştır
-        cursor.execute(
-            """\
-            SELECT 
-                data_content->'data_content'->>'query' AS trend_title,
-                COUNT(*) AS total_count
-            FROM 
-                trends
-            WHERE 
-                DATE(created_at) = CURRENT_DATE
-                AND country_code = 'TR'  -- Ülke kodunu filtrele
-            GROUP BY 
-                trend_title
-            ORDER BY 
-                total_count DESC
-            """
-        )
+            # Sorguyu çalıştır
+            cursor.execute(
+                f"""\
+                SELECT 
+                    data_content->'data_content'->>'query' AS trend_title,
+                    COUNT(*) AS total_count
+                FROM 
+                    trends
+                WHERE 
+                    DATE(created_at) = CURRENT_DATE
+                    AND country_code = '{country_code}'  -- Ülke kodunu filtrele
+                GROUP BY 
+                    trend_title
+                ORDER BY 
+                    total_count DESC
+                """
+            )
 
-        trends = cursor.fetchall()
+            trends = cursor.fetchall()
 
-        # Trend başlıklarını listeye al
-        trend_titles = [f"{title} - {count}" for title, count in trends]
+            # Trend başlıklarını listeye al ve arama bağlantıları ekle
+            trend_titles = [
+                f"<a href='https://www.google.com/search?q={title}' target='_blank'>[{count}] {title}</a>"
+                for title, count in trends
+            ]
 
-        # Bildirimi gönder
-        if trend_titles:
-            send_telegram_notification(trend_titles)
-        else:
-            print("No trends found for today.")
+            # Bildirimi gönder
+            if trend_titles:
+                send_telegram_notification(country_code, trend_titles)
+            else:
+                print(f"No trends found for {country_code} today.")
 
-        # Bağlantıyı kapat
-        cursor.close()
-        conn.close()
+            # Bağlantıyı kapat
+            cursor.close()
+            conn.close()
 
-    except Exception as e:
-        print(f"Error fetching trends: {e}")
+        except Exception as e:
+            print(f"Error fetching trends for {country_code}: {e}")
 
 
 # Günlük bildirim görevi
