@@ -25,6 +25,7 @@ dag = DAG(
     default_args=default_args,
     description="Scraping trends data and saving to database",
     schedule_interval="*/10 * * * *",  # Every 10 minutes
+    catchup=False,  # Geçmiş görevleri işlemeyecek
 )
 
 # Data scraping and database saving function
