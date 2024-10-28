@@ -15,9 +15,7 @@ load_dotenv()
 
 # UTC zaman damgasını oluştur
 utc_now = datetime.now(pytz.UTC)
-
-# Zulu (Z) formatında timestamp olarak yaz
-timestamp_z = utc_now.isoformat() + "Z"
+timestamp_z = utc_now.isoformat() + "Z"  # Zulu formatında timestamp
 
 # Default arguments for the DAG
 default_args = {
@@ -31,10 +29,12 @@ dag = DAG(
     "scrape_and_save_trends",
     default_args=default_args,
     description="Scraping trends data and saving to database",
-    schedule_interval="*/10 * * * *",  # Every 10 minutes
+    schedule_interval="*/10 * * * *",  # Her 10 dakikada bir
     catchup=False,  # Geçmiş görevleri işlemeyecek
 )
 
+# Ülkeler listesi
+countries = ["TR", "US", "GB"]  # Eklemek istediğiniz ülke kodlarını buraya ekleyebilirsiniz
 
 # Function to create table if it doesn't exist
 def create_table_if_not_exists():
@@ -57,7 +57,7 @@ def create_table_if_not_exists():
                 source_type_id INT NOT NULL,
                 data_category_id INT NOT NULL,
                 schema_type_id INT NOT NULL,
-                service_id VARCHAR NOT NULL,  -- service_id türünü VARCHAR olarak güncelledim
+                service_id VARCHAR NOT NULL,
                 time_interval INT NOT NULL,
                 fetch_frequency INT NOT NULL,
                 language_code VARCHAR(5) NOT NULL,
@@ -79,75 +79,79 @@ def create_table_if_not_exists():
         cursor.close()
         conn.close()
 
-
 # Data scraping and database saving function
 def scrape_and_save_trends(**kwargs):
-    # Airflow run_id'yi al
     run_id = kwargs["dag_run"].run_id
     logging.info(f"Current run_id: {run_id}")
 
-    url = os.getenv("TRENDS_URL")  # .env dosyasından URL al
-    logging.info(f"Fetching trends data from {url}")
+    records = []  # Kayıtları tutmak için bir liste oluştur
 
-    try:
-        response = requests.get(url)
+    for country_code in countries:  # Her ülke kodu için döngü
+        url = f"https://trends.google.com/trending/rss?geo={country_code}&sort=recency"  # URL'yi dinamik oluştur
+        logging.info(f"Fetching trends data from {url}")
 
-        if response.status_code == 200:
-            # XML verisini parse et
-            root = ET.fromstring(response.content)
-            records = []  # Kayıtları tutmak için bir liste oluştur
+        try:
+            response = requests.get(url)
 
-            for item in root.find("channel").findall("item"):
-                title = item.find("title").text
-                approx_traffic = item.find(
-                    "{https://trends.google.com/trending/rss}approx_traffic"
-                ).text
-                approx_traffic_value = int(approx_traffic.replace("+", "").strip())
-                pub_date = item.find("pubDate").text
+            if response.status_code == 200:
+                # XML verisini parse et
+                root = ET.fromstring(response.content)
 
-                # Ülke kodunu linkten çıkar
-                link = item.find("link").text
-                country_code = link.split("=")[-1]  # linkteki geo parametresini al
-                region = country_code  # planlama aşamasında
+                for item in root.find("channel").findall("item"):
+                    title = item.find("title").text
+                    approx_traffic = item.find("{https://trends.google.com/trending/rss}approx_traffic").text
+                    approx_traffic_value = int(approx_traffic.replace("+", "").strip())
+                    pub_date = item.find("pubDate").text
 
-                # JSON verisi
-                data_content = {
-                    "data_content": {
-                        "query": title,
-                        "timestamp": timestamp_z,
-                        "popularity_index": approx_traffic_value,
+                    # JSON verisi
+                    data_content = {
+                        "data_content": {
+                            "query": title,
+                            "timestamp": timestamp_z,
+                            "popularity_index": approx_traffic_value,
+                        }
                     }
-                }
 
-                # Kayıtları listeye ekle
-                records.append(
-                    (
-                        1,  # source_type_id
-                        1,  # data_category_id
-                        1,  # schema_type_id
-                        run_id,  # service_id (Airflow run_id)
-                        10,  # time_interval
-                        10,  # fetch_frequency
-                        "",  # language_code
-                        country_code,  # country_code
-                        region,  # region_code
-                        1,  # provider_id
-                        1,  # platform_id
-                        json.dumps(data_content),  # JSON verisi
+                    # Kayıtları listeye ekle
+                    records.append(
+                        (
+                            1,  # source_type_id
+                            1,  # data_category_id
+                            1,  # schema_type_id
+                            run_id,  # service_id (Airflow run_id)
+                            10,  # time_interval
+                            10,  # fetch_frequency
+                            "",  # language_code
+                            country_code,  # country_code
+                            country_code,  # region_code (örnek amaçlı aynı kullanılabilir)
+                            1,  # provider_id
+                            1,  # platform_id
+                            json.dumps(data_content),  # JSON verisi
+                        )
                     )
-                )
 
-            # PostgreSQL database connection
-            conn = psycopg2.connect(
-                host=os.getenv("DB_HOST"),
-                database=os.getenv("DB_NAME"),
-                user=os.getenv("DB_USER"),
-                password=os.getenv("DB_PASSWORD"),
-                port=os.getenv("DB_PORT"),
-            )
-            cursor = conn.cursor()
+                logging.info(f"Trends data fetched successfully for {country_code}.")
+            else:
+                logging.error(f"Error fetching data for {country_code}: {response.status_code}")
 
-            # Database'e tüm verileri ekle
+        except requests.exceptions.RequestException as e:
+            logging.error(f"Request error for {country_code}: {e}")
+        except Exception as e:
+            logging.error(f"Unexpected error for {country_code}: {e}")
+
+    # PostgreSQL database connection
+    try:
+        conn = psycopg2.connect(
+            host=os.getenv("DB_HOST"),
+            database=os.getenv("DB_NAME"),
+            user=os.getenv("DB_USER"),
+            password=os.getenv("DB_PASSWORD"),
+            port=os.getenv("DB_PORT"),
+        )
+        cursor = conn.cursor()
+
+        # Database'e tüm verileri ekle
+        if records:  # Kayıt varsa ekleme işlemini yap
             insert_query = """
                 INSERT INTO trends (
                     source_type_id,
@@ -169,16 +173,15 @@ def scrape_and_save_trends(**kwargs):
             conn.commit()
             logging.info("Trends data saved to the database successfully.")
         else:
-            logging.error(f"Error fetching data: {response.status_code}")
+            logging.warning("No trends data to save.")
 
-    except requests.exceptions.RequestException as e:
-        logging.error(f"Request error: {e}")
     except Exception as e:
-        logging.error(f"Unexpected error: {e}")
+        logging.error(f"Database connection error: {e}")
     finally:
-        cursor.close()
-        conn.close()
-
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
 
 # Table creation task
 create_table_task = PythonOperator(
