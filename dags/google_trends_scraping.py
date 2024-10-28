@@ -18,7 +18,7 @@ dag = DAG(
     "google_trends_scraping",
     default_args=default_args,
     description="Scraping Google Trends data",
-    schedule_interval="* * * * *",  # Her dakika çalışır
+    schedule_interval="*/10 * * * *",  # Her 10 dakikada bir çalışır
 )
 
 # Data scraping function
