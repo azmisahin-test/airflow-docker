@@ -22,7 +22,8 @@ dag = DAG(
     "daily_trends_notification",
     default_args=default_args,
     description="Daily notification of trends data",
-    schedule_interval="0 8 * * *",  # Her gün saat 08:00'de çalışacak
+    schedule_interval="0 6,12,18 * * *",  # Her gün saat 06:00, 12:00 ve 18:00'de çalışacak
+    catchup=False,  # Geçmiş görevleri işlemeyecek
 )
 
 def send_telegram_notification(trend_data):
