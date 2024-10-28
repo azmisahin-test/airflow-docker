@@ -25,12 +25,13 @@ default_args = {
 
 # DAG definition
 dag = DAG(
-    "daily_trends_notification",
+    "002_daily_trends_notification",
     default_args=default_args,
     description="Daily notification of trends data",
     schedule_interval="0 0,4,8,12,16,20 * * *",
     catchup=False,
 )
+
 
 def get_db_connection():
     return psycopg2.connect(
@@ -40,6 +41,18 @@ def get_db_connection():
         password=os.getenv("DB_PASSWORD"),
         port=os.getenv("DB_PORT"),
     )
+
+
+# Helper function to format numbers for better readability
+def format_number(value):
+    """Format the number into a more readable form."""
+    if value >= 1_000_000:
+        return f"{value / 1_000_000:.1f}M"  # Milyon
+    elif value >= 1_000:
+        return f"{value / 1_000:.1f}k"  # Bin
+    else:
+        return str(value)  # Sayıyı olduğu gibi döndür
+
 
 # Function to create table if it doesn't exist
 def create_table_if_not_exists():
@@ -82,20 +95,24 @@ def create_table_if_not_exists():
         if conn:
             conn.close()
 
+
 def send_telegram_notification(country, trend_data):
     bot_token = os.getenv("BOT_TOKEN")
     chat_id = os.getenv("CHAT_ID")
-    message = f"Today's Trends in {country}:\n" + "\n".join(trend_data)
+
+    # Notify the user with formatted message
+    message = f"📊 *Today's Trends in {country}*:\n\n" + "\n".join(trend_data)
 
     url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
     response = requests.post(
-        url, json={"chat_id": chat_id, "text": message, "parse_mode": "HTML"}
+        url, json={"chat_id": chat_id, "text": message, "parse_mode": "Markdown"}
     )
 
     if response.status_code == 200:
         logging.info(f"Notification sent successfully for {country}")
     else:
         logging.error(f"Failed to send notification for {country}: {response.text}")
+
 
 def fetch_trends(query):
     try:
@@ -111,6 +128,7 @@ def fetch_trends(query):
             cursor.close()
         if conn:
             conn.close()
+
 
 def fetch_and_notify_trends(**kwargs):
     # Tabloyu oluştur
@@ -137,7 +155,7 @@ def fetch_and_notify_trends(**kwargs):
         trends = fetch_trends(query)
 
         trend_titles = [
-            f"<a href='https://www.google.com/search?q={title}' target='_blank'>[{count} - {popularity}] {title}</a>"
+            f"🔗 [{format_number(count)} - {format_number(popularity)}] *{title}*"
             for title, popularity, count in trends
         ]
 
@@ -165,7 +183,7 @@ def fetch_and_notify_trends(**kwargs):
     global_trends = fetch_trends(global_query)
 
     global_trend_titles = [
-        f"<a href='https://www.google.com/search?q={title}' target='_blank'>[{count} - {popularity}] {title}</a>"
+        f"🔗 [{format_number(count)} - {format_number(popularity)}] *{title}*"
         for title, popularity, count in global_trends
     ]
 
@@ -174,9 +192,10 @@ def fetch_and_notify_trends(**kwargs):
     else:
         logging.info(f"No global trends found today")
 
+
 # notify_task tanımı
 notify_task = PythonOperator(
-    task_id="002_notify_daily_trends",
+    task_id="notify_daily_trends",
     python_callable=fetch_and_notify_trends,
     provide_context=True,
     dag=dag,
