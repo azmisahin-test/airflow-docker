@@ -1,3 +1,4 @@
+# dags\scrape_and_save_trends.py
 from airflow import DAG
 from airflow.operators.python import PythonOperator
 from datetime import datetime
@@ -33,7 +34,7 @@ default_args = {
 
 # DAG definition
 dag = DAG(
-    "scrape_and_save_trends",
+    "001_scrape_and_save_trends",
     default_args=default_args,
     description="Scraping trends data and saving to database",
     schedule_interval="*/10 * * * *",
