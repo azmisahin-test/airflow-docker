@@ -34,3 +34,5 @@ env/
 # Gereksiz dosyalar
 .DS_Store
 Thumbs.db
+
+.env
