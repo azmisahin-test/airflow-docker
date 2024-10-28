@@ -32,6 +32,55 @@ dag = DAG(
     catchup=False,
 )
 
+def get_db_connection():
+    return psycopg2.connect(
+        host=os.getenv("DB_HOST"),
+        database=os.getenv("DB_NAME"),
+        user=os.getenv("DB_USER"),
+        password=os.getenv("DB_PASSWORD"),
+        port=os.getenv("DB_PORT"),
+    )
+
+# Function to create table if it doesn't exist
+def create_table_if_not_exists():
+    logging.info("Checking if trends table exists.")
+    conn = None
+    cursor = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS trends (
+                id SERIAL PRIMARY KEY,
+                source_id INT NOT NULL,
+                provider_id INT NOT NULL,
+                platform_id INT NOT NULL,
+                service_id INT NOT NULL,
+                source_type_id INT NOT NULL,
+                data_category_id INT NOT NULL,
+                schema_type_id INT NOT NULL,
+                job_id INT NOT NULL,
+                task_id INT NOT NULL,
+                time_interval INT NOT NULL,
+                fetch_frequency INT NOT NULL,
+                language_code VARCHAR(5) NOT NULL,
+                country_code VARCHAR(5) NOT NULL,
+                region_code VARCHAR(5) NOT NULL,
+                data_content JSONB NOT NULL,
+                created_at TIMESTAMPTZ DEFAULT NOW()
+            )
+            """
+        )
+        conn.commit()
+        logging.info("Trends table checked/created successfully.")
+    except Exception as e:
+        logging.error(f"Error creating trends table: {e}")
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
 
 def send_telegram_notification(country, trend_data):
     bot_token = os.getenv("BOT_TOKEN")
@@ -48,17 +97,6 @@ def send_telegram_notification(country, trend_data):
     else:
         logging.error(f"Failed to send notification for {country}: {response.text}")
 
-
-def get_db_connection():
-    return psycopg2.connect(
-        host=os.getenv("DB_HOST"),
-        database=os.getenv("DB_NAME"),
-        user=os.getenv("DB_USER"),
-        password=os.getenv("DB_PASSWORD"),
-        port=os.getenv("DB_PORT"),
-    )
-
-
 def fetch_trends(query):
     try:
         conn = get_db_connection()
@@ -69,11 +107,15 @@ def fetch_trends(query):
         logging.error(f"Database query error: {e}")
         raise  # Raise the exception for Airflow to catch it
     finally:
-        cursor.close()
-        conn.close()
-
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
 
 def fetch_and_notify_trends(**kwargs):
+    # Tabloyu oluştur
+    create_table_if_not_exists()
+
     countries = ["TR", "US", "GB"]
     for country_code in countries:
         query = f"""
@@ -132,10 +174,9 @@ def fetch_and_notify_trends(**kwargs):
     else:
         logging.info(f"No global trends found today")
 
-
 # notify_task tanımı
 notify_task = PythonOperator(
-    task_id="notify_daily_trends",
+    task_id="002_notify_daily_trends",
     python_callable=fetch_and_notify_trends,
     provide_context=True,
     dag=dag,
