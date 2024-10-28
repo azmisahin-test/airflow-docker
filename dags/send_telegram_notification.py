@@ -6,9 +6,15 @@ import psycopg2
 import os
 import pytz
 from dotenv import load_dotenv
+import logging
 
 # .env dosyasını yükle
 load_dotenv()
+
+# Logging ayarları
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
+)
 
 # Default arguments for the DAG
 default_args = {
@@ -22,72 +28,102 @@ dag = DAG(
     "daily_trends_notification",
     default_args=default_args,
     description="Daily notification of trends data",
-    schedule_interval="0 6,12,18 * * *",  # Her gün saat 06:00, 12:00 ve 18:00'de çalışacak
-    catchup=False,  # Geçmiş görevleri işlemeyecek
+    schedule_interval="0 0,4,8,12,16,20 * * *",
+    catchup=False,
 )
 
 
 def send_telegram_notification(country, trend_data):
-    bot_token = os.getenv("BOT_TOKEN")  # .env dosyasından bot token al
-    chat_id = os.getenv("CHAT_ID")  # .env dosyasından chat ID al
+    bot_token = os.getenv("BOT_TOKEN")
+    chat_id = os.getenv("CHAT_ID")
     message = f"Today's Trends in {country}:\n" + "\n".join(trend_data)
 
     url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
     requests.post(url, json={"chat_id": chat_id, "text": message, "parse_mode": "HTML"})
 
 
+def get_db_connection():
+    return psycopg2.connect(
+        host=os.getenv("DB_HOST"),
+        database=os.getenv("DB_NAME"),
+        user=os.getenv("DB_USER"),
+        password=os.getenv("DB_PASSWORD"),
+        port=os.getenv("DB_PORT"),
+    )
+
+
+def fetch_trends(query):
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute(query)
+        return cursor.fetchall()
+    except Exception as e:
+        logging.error(f"Database query error: {e}")
+        return []
+    finally:
+        cursor.close()
+        conn.close()
+
+
 def fetch_and_notify_trends():
-    countries = ["TR", "US", "GB"]  # İzlemek istediğiniz ülkelerin kodları
+    countries = ["TR", "US", "GB"]
+
     for country_code in countries:
-        try:
-            # PostgreSQL veritabanı bağlantısı
-            conn = psycopg2.connect(
-                host=os.getenv("DB_HOST"),
-                database=os.getenv("DB_NAME"),
-                user=os.getenv("DB_USER"),
-                password=os.getenv("DB_PASSWORD"),
-                port=os.getenv("DB_PORT"),
-            )
-            cursor = conn.cursor()
+        query = f"""
+            SELECT 
+                data_content->'data_content'->>'query' AS trend_title,
+                SUM((data_content->'data_content'->>'popularity_index')::int) AS total_popularity_index,
+                COUNT(*) AS trend_count,
+                country_code
+            FROM 
+                trends
+            WHERE 
+                DATE(created_at) = CURRENT_DATE AND country_code = '{country_code}'
+            GROUP BY 
+                trend_title, country_code
+            ORDER BY 
+                total_popularity_index DESC
+            LIMIT 10
+        """
+        trends = fetch_trends(query)
 
-            # Sorguyu çalıştır
-            cursor.execute(
-                f"""\
-                SELECT 
-                    data_content->'data_content'->>'query' AS trend_title,
-                    COUNT(*) AS total_count
-                FROM 
-                    trends
-                WHERE 
-                    DATE(created_at) = CURRENT_DATE
-                    AND country_code = '{country_code}'  -- Ülke kodunu filtrele
-                GROUP BY 
-                    trend_title
-                ORDER BY 
-                    total_count DESC
-                """
-            )
+        trend_titles = [
+            f"<a href='https://www.google.com/search?q={title}' target='_blank'>[{count} - {popularity}] {title}</a>"
+            for title, popularity, count in trends
+        ]
 
-            trends = cursor.fetchall()
+        if trend_titles:
+            send_telegram_notification(country_code, trend_titles)
+        else:
+            logging.info(f"No trends found for {country_code} today.")
 
-            # Trend başlıklarını listeye al ve arama bağlantıları ekle
-            trend_titles = [
-                f"<a href='https://www.google.com/search?q={title}' target='_blank'>[{count}] {title}</a>"
-                for title, count in trends
-            ]
+    global_query = """
+        SELECT 
+            data_content->'data_content'->>'query' AS trend_title,
+            SUM((data_content->'data_content'->>'popularity_index')::int) AS total_popularity_index,
+            COUNT(*) AS trend_count
+        FROM 
+            trends
+        WHERE 
+            DATE(created_at) = CURRENT_DATE
+        GROUP BY 
+            trend_title
+        ORDER BY 
+            total_popularity_index DESC
+        LIMIT 10
+    """
+    global_trends = fetch_trends(global_query)
 
-            # Bildirimi gönder
-            if trend_titles:
-                send_telegram_notification(country_code, trend_titles)
-            else:
-                print(f"No trends found for {country_code} today.")
+    global_trend_titles = [
+        f"<a href='https://www.google.com/search?q={title}' target='_blank'>[{count} - {popularity}] {title}</a>"
+        for title, popularity, count in global_trends
+    ]
 
-            # Bağlantıyı kapat
-            cursor.close()
-            conn.close()
-
-        except Exception as e:
-            print(f"Error fetching trends for {country_code}: {e}")
+    if global_trend_titles:
+        send_telegram_notification("Worldwide", global_trend_titles)
+    else:
+        logging.info("No global trends found today.")
 
 
 # Günlük bildirim görevi
