@@ -27,9 +27,7 @@ timestamp_z = utc_now.isoformat() + "Z"
 # Default arguments for the DAG
 default_args = {
     "owner": "airflow",
-    "start_date": datetime(
-        2024, 10, 28, 0, 0, tzinfo=pytz.UTC
-    ),  # Güncel bir tarih ayarlayın
+    "start_date": datetime(2024, 10, 28, 0, 0, tzinfo=pytz.UTC),
     "retries": 1,
 }
 
@@ -38,31 +36,39 @@ dag = DAG(
     "scrape_and_save_trends",
     default_args=default_args,
     description="Scraping trends data and saving to database",
-    schedule_interval="*/10 * * * *",  # Her 10 dakikada bir
+    schedule_interval="*/10 * * * *",
     catchup=False,
 )
 
 # Ülkeler listesi
-countries = [
-    "TR",
-    "US",
-    "GB",
-]  # Eklemek istediğiniz ülke kodlarını buraya ekleyebilirsiniz
+countries = ["TR", "US", "GB"]
+
+# Ülke kodlarına göre dil kodları sözlüğü
+language_codes = {
+    "TR": "TR",
+    "US": "EN",
+    "GB": "EN",
+}
+
+
+def get_db_connection():
+    return psycopg2.connect(
+        host=os.getenv("DB_HOST"),
+        database=os.getenv("DB_NAME"),
+        user=os.getenv("DB_USER"),
+        password=os.getenv("DB_PASSWORD"),
+        port=os.getenv("DB_PORT"),
+    )
 
 
 # Function to create table if it doesn't exist
 def create_table_if_not_exists():
     logging.info("Checking if trends table exists.")
+    conn = None
+    cursor = None
     try:
-        conn = psycopg2.connect(
-            host=os.getenv("DB_HOST"),
-            database=os.getenv("DB_NAME"),
-            user=os.getenv("DB_USER"),
-            password=os.getenv("DB_PASSWORD"),
-            port=os.getenv("DB_PORT"),
-        )
+        conn = get_db_connection()
         cursor = conn.cursor()
-
         cursor.execute(
             """
             CREATE TABLE IF NOT EXISTS trends (
@@ -84,9 +90,8 @@ def create_table_if_not_exists():
                 data_content JSONB NOT NULL,
                 created_at TIMESTAMPTZ DEFAULT NOW()
             )
-            """
+        """
         )
-
         conn.commit()
         logging.info("Trends table checked/created successfully.")
     except Exception as e:
@@ -100,18 +105,13 @@ def create_table_if_not_exists():
 
 # Data scraping and database saving function
 def scrape_and_save_trends(**kwargs):
-    source_id = 1
-    provider_id = 1
-    platform_id = 1
-    service_id = 1
-    source_type_id = 1
-    data_category_id = 1
-    schema_type_id = 1
-    job_id = 1
-    task_id = 1
-    time_interval = 10
-    fetch_frequency = 10
-    language_code = ""
+    # Data preparation
+    source_id, provider_id, platform_id = 1, 1, 1
+    service_id, source_type_id, data_category_id = 1, 1, 1
+    schema_type_id, time_interval, fetch_frequency = 1, 10, 10
+
+    job_id = kwargs["dag_run"].run_id
+    job_id_hash = hash(job_id) % (10**8)
 
     records = []
 
@@ -119,12 +119,12 @@ def scrape_and_save_trends(**kwargs):
         url = f"https://trends.google.com/trending/rss?geo={country_code}&sort=recency"
         logging.info(f"Fetching trends data from {url}")
 
+        language_code = language_codes.get(country_code, country_code)
+
         try:
             response = requests.get(url)
-
             if response.status_code == 200:
                 root = ET.fromstring(response.content)
-
                 for item in root.find("channel").findall("item"):
                     title = item.find("title").text
                     approx_traffic = item.find(
@@ -132,12 +132,9 @@ def scrape_and_save_trends(**kwargs):
                     ).text
                     approx_traffic_value = int(approx_traffic.replace("+", "").strip())
 
-                    # Linkten region_code'u al
                     link = item.find("link").text
                     parsed_url = urlparse(link)
-                    region_code = parse_qs(parsed_url.query).get("geo", [None])[
-                        0
-                    ]  # 'geo' parametresini al
+                    region_code = parse_qs(parsed_url.query).get("geo", [None])[0]
 
                     data_content = {
                         "query": title,
@@ -154,13 +151,13 @@ def scrape_and_save_trends(**kwargs):
                             source_type_id,
                             data_category_id,
                             schema_type_id,
-                            job_id,
-                            task_id,
+                            job_id_hash,
+                            1,
                             time_interval,
                             fetch_frequency,
                             language_code,
                             country_code,
-                            region_code,  # Burada region_code kullanılıyor
+                            region_code,
                             json.dumps(data_content),
                         )
                     )
@@ -177,37 +174,21 @@ def scrape_and_save_trends(**kwargs):
             logging.error(f"Unexpected error for {country_code}: {e}")
 
     # PostgreSQL database connection
+    conn = None
+    cursor = None
     try:
-        conn = psycopg2.connect(
-            host=os.getenv("DB_HOST"),
-            database=os.getenv("DB_NAME"),
-            user=os.getenv("DB_USER"),
-            password=os.getenv("DB_PASSWORD"),
-            port=os.getenv("DB_PORT"),
-        )
+        conn = get_db_connection()
         cursor = conn.cursor()
-
         if records:
             insert_query = """
                 INSERT INTO trends (
-                    source_id,
-                    provider_id,
-                    platform_id,
-                    service_id,
-                    source_type_id,
-                    data_category_id,
-                    schema_type_id,
-                    job_id,
-                    task_id,
-                    time_interval,
-                    fetch_frequency,
-                    language_code,
-                    country_code,
-                    region_code,
-                    data_content
+                    source_id, provider_id, platform_id, service_id,
+                    source_type_id, data_category_id, schema_type_id,
+                    job_id, task_id, time_interval,
+                    fetch_frequency, language_code,
+                    country_code, region_code, data_content
                 ) VALUES %s
             """
-
             extras.execute_values(cursor, insert_query, records)
             conn.commit()
             logging.info("Trends data saved to the database successfully.")
