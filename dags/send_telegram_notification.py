@@ -39,7 +39,14 @@ def send_telegram_notification(country, trend_data):
     message = f"Today's Trends in {country}:\n" + "\n".join(trend_data)
 
     url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
-    requests.post(url, json={"chat_id": chat_id, "text": message, "parse_mode": "HTML"})
+    response = requests.post(
+        url, json={"chat_id": chat_id, "text": message, "parse_mode": "HTML"}
+    )
+
+    if response.status_code == 200:
+        logging.info(f"Notification sent successfully for {country}")
+    else:
+        logging.error(f"Failed to send notification for {country}: {response.text}")
 
 
 def get_db_connection():
@@ -60,15 +67,14 @@ def fetch_trends(query):
         return cursor.fetchall()
     except Exception as e:
         logging.error(f"Database query error: {e}")
-        return []
+        raise  # Raise the exception for Airflow to catch it
     finally:
         cursor.close()
         conn.close()
 
 
-def fetch_and_notify_trends():
+def fetch_and_notify_trends(**kwargs):
     countries = ["TR", "US", "GB"]
-
     for country_code in countries:
         query = f"""
             SELECT 
@@ -96,9 +102,10 @@ def fetch_and_notify_trends():
         if trend_titles:
             send_telegram_notification(country_code, trend_titles)
         else:
-            logging.info(f"No trends found for {country_code} today.")
+            logging.info(f"No trends found for {country_code} today")
 
-    global_query = """
+    # Global sorgu ile job_id ve task_id ekleme
+    global_query = f"""
         SELECT 
             data_content->'data_content'->>'query' AS trend_title,
             SUM((data_content->'data_content'->>'popularity_index')::int) AS total_popularity_index,
@@ -123,14 +130,13 @@ def fetch_and_notify_trends():
     if global_trend_titles:
         send_telegram_notification("Worldwide", global_trend_titles)
     else:
-        logging.info("No global trends found today.")
+        logging.info(f"No global trends found today")
 
 
-# Günlük bildirim görevi
+# notify_task tanımı
 notify_task = PythonOperator(
     task_id="notify_daily_trends",
     python_callable=fetch_and_notify_trends,
+    provide_context=True,
     dag=dag,
 )
-
-notify_task  # Görevi DAG'a ekle
