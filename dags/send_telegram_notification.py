@@ -26,17 +26,15 @@ dag = DAG(
     catchup=False,  # Geçmiş görevleri işlemeyecek
 )
 
+
 def send_telegram_notification(trend_data):
     bot_token = os.getenv("BOT_TOKEN")  # .env dosyasından bot token al
-    chat_id = os.getenv("CHAT_ID")      # .env dosyasından chat ID al
+    chat_id = os.getenv("CHAT_ID")  # .env dosyasından chat ID al
     message = "Today's Trends:\n" + "\n".join(trend_data)
 
     url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
-    requests.post(url, json={
-        "chat_id": chat_id,
-        "text": message,
-        "parse_mode": "HTML"
-    })
+    requests.post(url, json={"chat_id": chat_id, "text": message, "parse_mode": "HTML"})
+
 
 def fetch_and_notify_trends():
     try:
@@ -46,36 +44,46 @@ def fetch_and_notify_trends():
             database=os.getenv("DB_NAME"),
             user=os.getenv("DB_USER"),
             password=os.getenv("DB_PASSWORD"),
-            port=os.getenv("DB_PORT")
+            port=os.getenv("DB_PORT"),
         )
         cursor = conn.cursor()
-        
+
         # Sorguyu çalıştır
-        cursor.execute("""\
-            SELECT trend_title, COUNT(*) AS total_count
-            FROM trends
-            WHERE DATE(scraped_at) = CURRENT_DATE
-            GROUP BY trend_title
-            ORDER BY total_count DESC
-        """)
-        
+        cursor.execute(
+            """\
+            SELECT 
+                data_content->'data_content'->>'query' AS trend_title,
+                COUNT(*) AS total_count
+            FROM 
+                trends
+            WHERE 
+                DATE(created_at) = CURRENT_DATE
+                AND country_code = 'TR'  -- Ülke kodunu filtrele
+            GROUP BY 
+                trend_title
+            ORDER BY 
+                total_count DESC
+            """
+        )
+
         trends = cursor.fetchall()
-        
+
         # Trend başlıklarını listeye al
         trend_titles = [f"{title} - {count}" for title, count in trends]
-        
+
         # Bildirimi gönder
         if trend_titles:
             send_telegram_notification(trend_titles)
         else:
             print("No trends found for today.")
-        
+
         # Bağlantıyı kapat
         cursor.close()
         conn.close()
-        
+
     except Exception as e:
         print(f"Error fetching trends: {e}")
+
 
 # Günlük bildirim görevi
 notify_task = PythonOperator(
