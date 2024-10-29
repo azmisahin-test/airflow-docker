@@ -155,11 +155,12 @@ def fetch_and_notify_trends(**kwargs):
             LIMIT 10
         """
         trends = fetch_trends(query)
-
+        print("trends....",trends)
         trend_titles = [
-            f"🔗 [{format_number(count)} - {format_number(popularity)}] *{title}*"
-            for title, popularity, count in trends
+            f"🔗 {country} [{title}](https://www.google.com/search?q={title}) - {format_number(count)} - {format_number(popularity)}"
+            for title, popularity, country, count in trends
         ]
+
 
         if trend_titles:
             send_telegram_notification(country_code, trend_titles)
@@ -187,9 +188,10 @@ def fetch_and_notify_trends(**kwargs):
     global_trends = fetch_trends(global_query)
 
     global_trend_titles = [
-        f"🔗 [{format_number(count)} - {format_number(popularity)}] *{title}*"
-        for title, popularity, count in global_trends
+    f"🔗 {country} [{title}](https://www.google.com/search?q={title}) - {format_number(count)} - {format_number(popularity)}"
+    for title, popularity, country, count in global_trends
     ]
+
 
     if global_trend_titles:
         send_telegram_notification("Worldwide", global_trend_titles)
